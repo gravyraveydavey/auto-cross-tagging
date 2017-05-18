@@ -1,0 +1,22 @@
+#auto_taxonomies-add-toggle{
+	display: none;
+}
+.acf-field-591c6d710a65b{
+	display: none;
+}
+
+
+.taxonomy-auto_taxonomies #col-left{
+	display: none;
+}
+.taxonomy-auto_taxonomies #col-right{
+	float: none;
+	width: auto;
+}
+.taxonomy-auto_taxonomies .row-actions .edit,
+.taxonomy-auto_taxonomies .row-actions .inline{
+	display: none;
+}
+.code-block{
+	display: block;
+}
