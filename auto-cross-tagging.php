@@ -258,7 +258,15 @@ function auto_taxonomies_register_fields(){
 
 
 function auto_taxonomies_menu_page(){
-  add_menu_page('Cross Tagging', 'Cross Tagging', 'manage_options', 'auto-taxonomies', 'auto_taxonomies_admin_page');
+
+	$page_title        = 'Auto Cross Tagging';
+	$menu_title        = 'Auto Cross Tagging';
+	$capability        = 'manage_options';
+	$menu_slug         = 'auto-taxonomies';
+	$callback_function = 'auto_taxonomies_admin_page';
+
+	add_options_page($page_title, $menu_title, $capability, $menu_slug, $callback_function);
+
 }
 
 function auto_taxonomies_admin_page() {
