@@ -8,13 +8,15 @@ Author URI: https://github.com/gravyraveydavey
 */
 
 if (class_exists('acf') ){
-	add_action('init',	'auto_taxonomies_init', 5);
+	auto_taxonomies_init();
 }
 
 function auto_taxonomies_init(){
 
-	add_action( 'init', 'auto_taxonomies_registration' );
-	add_action( 'init', 'auto_taxonomies_register_fields' );
+	add_action('admin_menu', 'auto_taxonomies_menu_page', 10);
+
+	add_action( 'admin_init', 'auto_taxonomies_registration' );
+	add_action( 'admin_init', 'auto_taxonomies_register_fields' );
 
 	add_action( 'admin_enqueue_scripts', 'auto_tax_admin_css', 11 );
 
@@ -27,7 +29,6 @@ function auto_taxonomies_init(){
 
 	add_filter("manage_auto_taxonomies_custom_column", 'custom_auto_taxonomies_column', 10, 3);
 
-	add_action('admin_menu', 'auto_taxonomies_menu_page');
 }
 
 function auto_tax_admin_css() {
