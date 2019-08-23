@@ -58,7 +58,7 @@ class auto_cross_tagging_plugin {
 		// admin stuff
 		add_action('admin_menu', array($this,'menu_page'), 10);
 
-		add_action( 'admin_init', array($this,'registration' ));
+		add_action( 'wp_loaded', array($this,'registration' ));
 		add_action( 'admin_init', array($this,'register_fields' ));
 
 		add_action( 'admin_enqueue_scripts', array($this,'auto_tax_admin_css'), 11 );
