@@ -15,6 +15,8 @@ class auto_cross_tagging_plugin {
 		$plugin_base,
 		$plugin_base_path,
 		$options,
+		$acf_bool_field_id,
+		$acf_tax_id_field_id,
 		$debug;
 
 	public function __construct(){
@@ -26,21 +28,6 @@ class auto_cross_tagging_plugin {
 			add_action('plugins_loaded', array($this, 'init'), 20 );
 		}
 
-		//add_action('plugins_loaded', array($this, 'setup_cpt_dump') );
-		// $hooks = array(
-		// 'registered_post_type',
-		// 'wp_loaded',
-		// 'wp_loaded',
-		// 'adminmenu',
-		// 'shutdown'
-		// );
-		// $this->_log('registering action for: ' . $hook);
-		add_action('after_setup_theme', function(){
-			$this->cpt_dump('after_setup_theme');
-		});
-		add_action('wp_loaded', function(){
-			$this->cpt_dump('wp_loaded');
-		});
 	}
 
 	public function _log($message){
@@ -54,11 +41,15 @@ class auto_cross_tagging_plugin {
 	public function init(){
 		add_action( 'init', array($this, 'setup'), 0 );
 	}
+
 	public function setup() {
 
 		$this->plugin_base = plugin_dir_url(__FILE__);
 		$this->plugin_base_path = plugin_dir_path(__FILE__);
 		$this->debug = false;
+
+		$this->acf_bool_field_id = 'field_591c213c8a3ac';
+		$this->acf_tax_id_field_id = 'field_591c6d710a65b';
 
 		$this->populate_options();
 		//$this->_log('saved options');
@@ -106,72 +97,83 @@ class auto_cross_tagging_plugin {
 	}
 
 	public function delete_auto_term_hook($term_id, $taxonomy){
-			// bail early if not an auto_tax term
-			if( $taxonomy !== 'auto_taxonomies') {
-					return;
-			}
-			$term = get_term($term_id);
-			if ($term){
-				// update postmeta for source page to remove auto tax
-				update_field('field_591c213c8a3ac', 0, $term->description);
-				update_field('field_591c6d710a65b', '', $term->description);
-			}
+		// bail early if not an auto_tax term
+		if( $taxonomy !== 'auto_taxonomies') {
+				return;
+		}
+		$term = get_term($term_id);
+		if ($term){
+			// update postmeta for source page to remove auto tax
+			update_field($this->acf_bool_field_id, 0, $term->description);
+			update_field($this->acf_tax_id_field_id, '', $term->description);
+		}
 	}
 
 
 	public function admin_columns($columns) {
 		// removes the description column
-			$new_columns = array(
-				'cb' => '<input type="checkbox" />',
-				'name' => __('Name'),
-				'origin_header' => __('Origin ID'),
-				'slug' => __('Slug'),
-				'posts' => __('Posts')
-			);
-			return $new_columns;
+		$new_columns = array(
+			'cb' => '<input type="checkbox" />',
+			'name' => __('Name'),
+			'origin_header' => __('Origin ID'),
+			'slug' => __('Slug'),
+			'posts' => __('Posts')
+		);
+		return $new_columns;
 	}
 
 
 	public function custom_column($string, $column_name, $term_id) {
 		// turns description colummn into a link to original source of term
-			$term = get_term($term_id, 'auto_taxonomies');
-			switch ($column_name) {
-					case 'origin_header':
-							// get header image url
-							$string .= "<a href=".get_edit_post_link($term->description).">".$term->description."</a>";
-							break;
-					default:
-							break;
-			}
-			return $string;
+		$term = get_term($term_id, 'auto_taxonomies');
+		switch ($column_name) {
+				case 'origin_header':
+						// get header image url
+						$string .= "<a href=".get_edit_post_link($term->description).">".$term->description."</a>";
+						break;
+				default:
+						break;
+		}
+		return $string;
 	}
 
 
 	public function save_hook( $post_id ){
 
-			// bail early if no ACF data
-			if( empty($_POST['acf']) ) {
-					return;
-			}
+		$this->_log('save post hook');
+		// bail early if no ACF data
+		if( empty($_POST['acf']) ) {
+				return;
+		}
 
+		$term_id = $this->add_auto_tax_term( $post_id, $_POST['acf'][$this->acf_bool_field_id], $_POST['acf'][$this->acf_tax_id_field_id] );
+
+		if ($term_id) $_POST['acf'][$this->acf_tax_id_field_id] = $term_id;
+		$this->_log('new term created! term id: ' . $term_id);
+
+	}
+
+	public function add_auto_tax_term( $post_id, $bool_field, $term_id_field ){
+
+		$term_id = false;
 		//_log('some acf data found...');
-			if ($_POST['acf']['field_591c213c8a3ac']){
+		if ($bool_field){
 
-				$post = get_post($post_id);
+			$post = get_post($post_id);
 			$term_name = $post->post_title;
 			$term_slug = 'auto-tax-'.$post->post_name;
 
-				if ($_POST['acf']['field_591c6d710a65b']){
-					// existing ID found in postmeta, use this as lookup
-				$term_id = intval($_POST['acf']['field_591c6d710a65b']);
+			if ($term_id_field){
+				// existing ID found in postmeta, use this as lookup
+				$term_id = intval($term_id_field);
 				//_log('looking for term id '.$term_id);
-					$term = term_exists( $term_id, 'auto_taxonomies' );
+				$term = term_exists( $term_id, 'auto_taxonomies' );
 
-				} else {
-					// attempt to find term by post title
+			} else {
+				// attempt to find term by post title
 				//_log('looking for term '.$term_name);
 				$term = term_exists( $term_name, 'auto_taxonomies' );
-				}
+			}
 
 			if ($term){
 
@@ -188,20 +190,21 @@ class auto_cross_tagging_plugin {
 
 			}
 			//_log($term);
-			$_POST['acf']['field_591c6d710a65b'] = $term_id;
 
-			} else {
-				// maybe initiate an auto clean up here to kill off the term
-			}
+		} else {
+			// maybe initiate an auto clean up here to kill off the term
+		}
 
+		return $term_id;
 	}
 
 	public function registration(){
 
 		// open a filter for customizing the CPTs
 		$users = (array) $this->options['at_cpts_users'];
-
+		//$this->_log('registering auto tax, assigning to following cpts');
 		$attachable_post_types = apply_filters( 'auto_taxonomies_attach_to_types', $users );
+		//$this->_log($attachable_post_types);
 
 		$labels = array(
 			'name'                       => _x( 'Content Cross Tagging', 'Taxonomy General Name', 'text_domain' ),
@@ -232,7 +235,7 @@ class auto_cross_tagging_plugin {
 			'public'                     => true,
 			'show_ui'                    => true,
 			'show_admin_column'          => true,
-			'show_in_nav_menus'          => false,
+			'show_in_nav_menus'          => true,
 			'show_tagcloud'              => false,
 		);
 
@@ -245,7 +248,7 @@ class auto_cross_tagging_plugin {
 		if( function_exists('acf_add_local_field_group') ){
 
 			$location_array = array();
-			$creators = (array) $this->options['at_cpts_creators'];
+			$creators = (array) (array_key_exists('at_cpts_creators', $this->options)) ? $this->options['at_cpts_creators'] : array();
 			$cpts_option = apply_filters( 'auto_taxonomies_attach_to_types', $creators );
 
 			foreach( $cpts_option as $custom_post_type ) {
@@ -263,7 +266,7 @@ class auto_cross_tagging_plugin {
 				'title' => 'Content Cross Tagging',
 				'fields' => array (
 					array (
-						'key' => 'field_591c213c8a3ac',
+						'key' => $this->acf_bool_field_id,
 						'label' => 'Create AutoTaxonomy?',
 						'name' => 'create_autotaxonomy_from_page',
 						'type' => 'true_false',
@@ -282,7 +285,7 @@ class auto_cross_tagging_plugin {
 						'ui_off_text' => '',
 					),
 					array (
-						'key' => 'field_591c6d710a65b',
+						'key' => $this->acf_tax_id_field_id,
 						'label' => 'auto_tax_term_id',
 						'name' => 'auto_tax_term_id',
 						'type' => 'number',
@@ -339,16 +342,38 @@ class auto_cross_tagging_plugin {
 			wp_die( __('You do not have sufficient permissions to access this page.')    );
 		}
 		include_once(__DIR__ . '/options.php');
+
 	}
 
-	public function cpt_dump($hook){
-		$default_cpts = get_post_types( array( 'public' => true, '_builtin' => false ), 'names' );
-		$custom_cpts = get_post_types( array( 'public' => true, '_builtin' => true ), 'names' );
-		$cpts = array_merge($default_cpts, $custom_cpts);
-		$this->_log('CPTS FROM HOOK: ' . $hook);
-		$this->_log($cpts);
+	public function batch_assign_terms($cpt){
+		$this->_log('FOUND BATCH ASSIGNMENT REQUEST, DO STUFF');
+
+		if ($cpt){
+			// query CPT for all published content
+			$args = array(
+				'post_type' => $cpt,
+				'fields' => 'ids',
+				'post_status' => array('publish', 'private'),
+				'posts_per_page' => -1,
+			);
+			$query = new WP_Query( $args );
+
+			if($query->post_count){
+				//$solution->term_id
+				//update_post_meta( $solution->term_id, '', 1, $prev_value )
+
+				//$this->_log('ids to add terms to:');
+				//$this->_log($query->posts);
+
+				foreach ($query->posts as $post_id){
+					//$this->_log('update meta for post: ' . $post_id);
+					$success = update_field($this->acf_bool_field_id, 1, $post_id);
+					$this->add_auto_tax_term($post_id, 1, '');
+					//$this->_log($success);
+					//$term_id = $this->add_auto_tax_term($post_id, $bool_field, $term_id_field);
+				}
+			}
+		}
 	}
+
 }
-
-
-/////

@@ -4,6 +4,10 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 	// the button has been pressed AND we've passed the security check
 	// store stuff!
 	update_option('auto_taxonomies_options', $_POST['auto_taxonomies_options']);
+
+	if (array_key_exists('at_cpts_batch_assign', $_POST['auto_taxonomies_options']) ){
+		$this->batch_assign_terms($_POST['auto_taxonomies_options']['at_cpts_batch_assign']);
+	}
 }
 ?>
 <div class="wrap">
@@ -29,16 +33,15 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 								<td><label for="auto_taxonomies_options_at_cpts_creators">Allow the following post types to <strong>create</strong> auto tags</label></td>
 								<td>
 									<?php
-										$stored_options = get_option('auto_taxonomies_options');
 										$default_cpts = get_post_types( array( 'public' => true, '_builtin' => false ), 'objects' );
 										$custom_cpts = get_post_types( array( 'public' => true, '_builtin' => true ), 'objects' );
 										$cpts = array_merge($default_cpts, $custom_cpts);
-										$options = (array)$stored_options['at_cpts_creators'];
+										$creators = (array) (array_key_exists('at_cpts_creators', $this->options)) ? $this->options['at_cpts_creators'] : array();
 
 										if (!empty($cpts)){
 											$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_creators][]" id="auto_taxonomies_options_at_cpts_creators" class="regular-text all-options">';
 											foreach( $cpts as $id => $cpt ) {
-												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, in_array( $id, $options ) ? 'selected' : '', $cpt->labels->singular_name );
+												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, in_array( $id, $creators ) ? 'selected' : '', $cpt->labels->singular_name );
 											}
 											$html .= '</select>';
 										} else {
@@ -53,16 +56,55 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 								<td><label for="auto_taxonomies_options_at_cpts_users">Allow the following post types to <strong>use</strong> auto tags</label></td>
 								<td>
 									<?php
-										$options = (array)$stored_options['at_cpts_users'];
+										$users = (array) (array_key_exists('at_cpts_users', $this->options)) ? $this->options['at_cpts_users'] : array();
 										if (!empty($cpts)){
 											$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_users][]" id="auto_taxonomies_options_at_cpts_users" class="regular-text all-options">';
 											foreach( $cpts as $id => $cpt ) {
-												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, in_array( $id, $options ) ? 'selected' : '', $cpt->labels->singular_name );
+												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, in_array( $id, $users ) ? 'selected' : '', $cpt->labels->singular_name );
 											}
 											$html .= '</select>';
 										} else {
 											$html = '<p class="description">No custom post types found</p>';
 											$html .= '<input type="hidden" name="auto_taxonomies_options[at_cpts_users][]" id="auto_taxonomies_options_at_cpts_users" />';
+										}
+										echo $html;
+										?>
+								</td>
+							</tr>
+						</tbody>
+						<tfoot>
+							<tr>
+								<td colspan="2" align="right">
+									<button class="button-primary" type="submit" name="submit"><?php esc_attr_e( 'Save changes' ); ?></button>
+								</td>
+							</tr>
+						</tfoot>
+					</table>
+					<br />
+
+
+					<table class="widefat">
+						<thead>
+							<tr>
+								<th colspan="2"><strong>Batch assign</strong></td>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><label for="auto_taxonomies_options_at_cpts_batch_assign">Batch update a post type to add all it's content as new tax terms</label></td>
+								<td>
+									<?php
+										$creators = (array) (array_key_exists('at_cpts_batch_assign', $this->options)) ? $this->options['at_cpts_creators'] : array();
+
+										if (!empty($cpts)){
+											$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_batch_assign][]" id="auto_taxonomies_options_at_cpts_batch_assign" class="regular-text all-options">';
+											foreach( $cpts as $id => $cpt ) {
+												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, '', $cpt->labels->singular_name );
+											}
+											$html .= '</select>';
+										} else {
+											$html = '<p class="description">No custom post types found</p>';
+											$html .= '<input type="hidden" name="auto_taxonomies_options[at_cpts_batch_assign][]" id="auto_taxonomies_options_at_cpts_batch_assign" />';
 										}
 										echo $html;
 										?>
