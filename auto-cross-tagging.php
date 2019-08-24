@@ -15,6 +15,8 @@ class auto_cross_tagging_plugin {
 		$plugin_base,
 		$plugin_base_path,
 		$options,
+		$users,
+		$creators,
 		$acf_bool_field_id,
 		$acf_tax_id_field_id,
 		$debug;
@@ -83,7 +85,15 @@ class auto_cross_tagging_plugin {
 	}
 
 	public function populate_options(){
-		if (!isset($this->options)) $this->options = get_option('auto_taxonomies_options');
+		if (!isset($this->options)) $this->options = get_option('auto_taxonomies_options', array());
+		$this->users = array();
+		if ( array_key_exists('at_cpts_users', $this->options)) {
+			$this->users = (array) $this->options['at_cpts_users'];
+		}
+		$this->creators = array();
+		if ( array_key_exists('at_cpts_creators', $this->options)) {
+			$this->creators = (array) $this->options['at_cpts_creators'];
+		}
 	}
 
 	public function deactivation() {
@@ -94,6 +104,36 @@ class auto_cross_tagging_plugin {
 		// used to hide the edit / add interface elements on the term page
 		// and the meta box that stores the term id on the source page
 		wp_enqueue_style('auto_tax_admin_css', plugins_url('css/wp-admin.css', __FILE__));
+		add_action('admin_head', array($this, 'add_tax_page_css'));
+	}
+
+	public function add_tax_page_css(){
+
+		$creators = (array) $this->options['at_cpts_creators'];
+
+		if (!empty($creators)){
+			?>
+			<style>
+				<?php
+				foreach($creators as $tax){
+					?>
+					.taxonomy-<?php echo $tax; ?> #col-left{
+						display: none;
+					}
+					.taxonomy-<?php echo $tax; ?> #col-right{
+						float: none;
+						width: auto;
+					}
+					.taxonomy-<?php echo $tax; ?> .row-actions .edit,
+					.taxonomy-<?php echo $tax; ?> .row-actions .inline{
+						display: none;
+					}
+					<?php
+				}
+				?>
+			</style>
+			<?php
+		}
 	}
 
 	public function delete_auto_term_hook($term_id, $taxonomy){
@@ -146,50 +186,56 @@ class auto_cross_tagging_plugin {
 				return;
 		}
 
-		$term_id = $this->add_auto_tax_term( $post_id, $_POST['acf'][$this->acf_bool_field_id], $_POST['acf'][$this->acf_tax_id_field_id] );
+		if (array_key_exists($cpt, $this->options['at_cpts_users'])){
+			foreach ($this->options['at_cpts_users'][$cpt] as $tax){
+				$term_id = $this->add_auto_tax_term( $post_id, $_POST['acf'][$this->acf_bool_field_id], $_POST['acf'][$this->acf_tax_id_field_id], $tax );
 
-		if ($term_id) $_POST['acf'][$this->acf_tax_id_field_id] = $term_id;
-		$this->_log('new term created! term id: ' . $term_id);
+				if ($term_id) $_POST['acf'][$this->acf_tax_id_field_id] = $term_id;
+				$this->_log('new term created! term id: ' . $term_id);
+			}
+		}
 
 	}
 
-	public function add_auto_tax_term( $post_id, $bool_field, $term_id_field ){
-
+	public function add_auto_tax_term( $post_id, $bool_field, $term_id_field, $tax ){
+		//$this->_log('adding term to '.$tax);
 		$term_id = false;
-		//_log('some acf data found...');
+		//$this->_log('some acf data found...');
 		if ($bool_field){
 
 			$post = get_post($post_id);
 			$term_name = $post->post_title;
-			$term_slug = 'auto-tax-'.$post->post_name;
+			$term_slug = $post->post_name;
 
 			if ($term_id_field){
 				// existing ID found in postmeta, use this as lookup
 				$term_id = intval($term_id_field);
-				//_log('looking for term id '.$term_id);
-				$term = term_exists( $term_id, 'auto_taxonomies' );
+				//$this->_log('looking for term id '.$term_id);
+				$term = term_exists( $term_id, $tax );
 
 			} else {
 				// attempt to find term by post title
-				//_log('looking for term '.$term_name);
-				$term = term_exists( $term_name, 'auto_taxonomies' );
+				//$this->_log('looking for term '.$term_name);
+				$term = term_exists( $term_name, $tax );
 			}
 
 			if ($term){
 
 				$term_id = $term['term_id'];
-				//_log('existing term found for '.$term_name);
-				//_log($term);
-				wp_update_term( $term_id, 'auto_taxonomies', array('name' => $term_name, 'slug' => $term_slug, 'description' => $post_id) );
+				//$this->_log('existing term found for '.$term_name);
+				//$this->_log($term);
+				wp_update_term( $term_id, $tax, array('name' => $term_name, 'slug' => $term_slug, 'description' => $post_id) );
 
 			} else {
 
-				//_log('create term for '.$term_name);
-				$term = wp_insert_term( $term_name, 'auto_taxonomies', array('slug' => $term_slug, 'description' => $post_id) );
-				$term_id = $term['term_id'];
+				//$this->_log('create term for '.$term_name);
+				$term = wp_insert_term( $term_name, $tax, array('slug' => $term_slug, 'description' => $post_id) );
+				if ( !is_wp_error( $term ) ) {
+					$term_id = $term['term_id'];
+				}
 
 			}
-			//_log($term);
+			//$this->_log($term);
 
 		} else {
 			// maybe initiate an auto clean up here to kill off the term
@@ -201,45 +247,56 @@ class auto_cross_tagging_plugin {
 	public function registration(){
 
 		// open a filter for customizing the CPTs
+		$creators = (array) $this->options['at_cpts_creators'];
 		$users = (array) $this->options['at_cpts_users'];
-		//$this->_log('registering auto tax, assigning to following cpts');
-		$attachable_post_types = apply_filters( 'auto_taxonomies_attach_to_types', $users );
-		//$this->_log($attachable_post_types);
 
-		$labels = array(
-			'name'                       => _x( 'Content Cross Tagging', 'Taxonomy General Name', 'text_domain' ),
-			'singular_name'              => _x( 'Cross Tag', 'Taxonomy Singular Name', 'text_domain' ),
-			'menu_name'                  => __( 'Cross Tagging', 'text_domain' ),
-			'all_items'                  => __( 'All Items', 'text_domain' ),
-			'parent_item'                => __( 'Parent Item', 'text_domain' ),
-			'parent_item_colon'          => __( 'Parent Item:', 'text_domain' ),
-			'new_item_name'              => __( 'New Item Name', 'text_domain' ),
-			'add_new_item'               => __( 'Add New Item', 'text_domain' ),
-			'edit_item'                  => __( 'Edit Item', 'text_domain' ),
-			'update_item'                => __( 'Update Item', 'text_domain' ),
-			'view_item'                  => __( 'View Item', 'text_domain' ),
-			'separate_items_with_commas' => __( 'Separate items with commas', 'text_domain' ),
-			'add_or_remove_items'        => __( 'Add or remove items', 'text_domain' ),
-			'choose_from_most_used'      => __( 'Choose from the most used', 'text_domain' ),
-			'popular_items'              => __( 'Popular Items', 'text_domain' ),
-			'search_items'               => __( 'Search Items', 'text_domain' ),
-			'not_found'                  => __( 'Not Found', 'text_domain' ),
-			'no_terms'                   => __( 'No items', 'text_domain' ),
-			'items_list'                 => __( 'Items list', 'text_domain' ),
-			'items_list_navigation'      => __( 'Items list navigation', 'text_domain' ),
-		);
+		$default_cpts = get_post_types( array( 'public' => true, '_builtin' => false ), 'objects' );
+		$custom_cpts = get_post_types( array( 'public' => true, '_builtin' => true ), 'objects' );
+		$cpts = array_merge($default_cpts, $custom_cpts);
 
-		$args = array(
-			'labels'                     => $labels,
-			'hierarchical'               => true,
-			'public'                     => true,
-			'show_ui'                    => true,
-			'show_admin_column'          => true,
-			'show_in_nav_menus'          => true,
-			'show_tagcloud'              => false,
-		);
+		foreach($creators as $creator){
+			if(array_key_exists($creator, $users)){
 
-		register_taxonomy( 'auto_taxonomies', $attachable_post_types, $args );
+				//$this->_log('registering auto tax, assigning to following cpts');
+				//$this->_log($attachable_post_types);
+				$this->_log( 'registering tax: ' . $cpts[ $creator ]->name );
+
+				$labels = array(
+					'name'                       => _x( $cpts[ $creator ]->labels->name.' (Auto Tax)', 'Taxonomy General Name', 'text_domain' ),
+					'singular_name'              => _x( $cpts[ $creator ]->labels->name.' (Auto Tax)', 'Taxonomy Singular Name', 'text_domain' ),
+					'menu_name'                  => __( $cpts[ $creator ]->labels->name, 'text_domain' ),
+					'all_items'                  => __( 'All Items', 'text_domain' ),
+					'parent_item'                => __( 'Parent Item', 'text_domain' ),
+					'parent_item_colon'          => __( 'Parent Item:', 'text_domain' ),
+					'new_item_name'              => __( 'New Item Name', 'text_domain' ),
+					'add_new_item'               => __( 'Add New Item', 'text_domain' ),
+					'edit_item'                  => __( 'Edit Item', 'text_domain' ),
+					'update_item'                => __( 'Update Item', 'text_domain' ),
+					'view_item'                  => __( 'View Item', 'text_domain' ),
+					'separate_items_with_commas' => __( 'Separate items with commas', 'text_domain' ),
+					'add_or_remove_items'        => __( 'Add or remove items', 'text_domain' ),
+					'choose_from_most_used'      => __( 'Choose from the most used', 'text_domain' ),
+					'popular_items'              => __( 'Popular Items', 'text_domain' ),
+					'search_items'               => __( 'Search Items', 'text_domain' ),
+					'not_found'                  => __( 'Not Found', 'text_domain' ),
+					'no_terms'                   => __( 'No items', 'text_domain' ),
+					'items_list'                 => __( 'Items list', 'text_domain' ),
+					'items_list_navigation'      => __( 'Items list navigation', 'text_domain' ),
+				);
+
+				$args = array(
+					'labels'                     => $labels,
+					'hierarchical'               => true,
+					'public'                     => true,
+					'show_ui'                    => true,
+					'show_admin_column'          => true,
+					'show_in_nav_menus'          => true,
+					'show_tagcloud'              => false,
+				);
+				$this->_log($users[$creator]);
+				register_taxonomy( $cpts[ $creator ]->name, $users[$creator], $args );
+			}
+		}
 
 	}
 
@@ -251,14 +308,16 @@ class auto_cross_tagging_plugin {
 			$creators = (array) (array_key_exists('at_cpts_creators', $this->options)) ? $this->options['at_cpts_creators'] : array();
 			$cpts_option = apply_filters( 'auto_taxonomies_attach_to_types', $creators );
 
-			foreach( $cpts_option as $custom_post_type ) {
-				$location_array[] =  array(
-					array(
-						'param' => 'post_type',
-						'operator' => '==',
-						'value' => $custom_post_type,
-					),
-				);
+			if ($cpts_option){
+				foreach( $cpts_option as $custom_post_type ) {
+					$location_array[] =  array(
+						array(
+							'param' => 'post_type',
+							'operator' => '==',
+							'value' => $custom_post_type,
+						),
+					);
+				}
 			}
 
 			$auto_tax_field = array(
@@ -345,32 +404,42 @@ class auto_cross_tagging_plugin {
 
 	}
 
-	public function batch_assign_terms($cpt){
+	public function batch_assign_terms($cpts){
 		$this->_log('FOUND BATCH ASSIGNMENT REQUEST, DO STUFF');
+		//$this->_log($cpts);
+		if ($cpts){
+			foreach($cpts as $cpt){
 
-		if ($cpt){
-			// query CPT for all published content
-			$args = array(
-				'post_type' => $cpt,
-				'fields' => 'ids',
-				'post_status' => array('publish', 'private'),
-				'posts_per_page' => -1,
-			);
-			$query = new WP_Query( $args );
+				// query CPT for all published content
+				$args = array(
+					'post_type' => $cpt,
+					'fields' => 'ids',
+					'post_status' => array('publish', 'private'),
+					'posts_per_page' => -1,
+				);
+				$query = new WP_Query( $args );
 
-			if($query->post_count){
-				//$solution->term_id
-				//update_post_meta( $solution->term_id, '', 1, $prev_value )
+				if (array_key_exists($cpt, $this->options['at_cpts_users'])){
 
-				//$this->_log('ids to add terms to:');
-				//$this->_log($query->posts);
+					if($query->post_count){
+						//$solution->term_id
+						//update_post_meta( $solution->term_id, '', 1, $prev_value )
 
-				foreach ($query->posts as $post_id){
-					//$this->_log('update meta for post: ' . $post_id);
-					$success = update_field($this->acf_bool_field_id, 1, $post_id);
-					$this->add_auto_tax_term($post_id, 1, '');
-					//$this->_log($success);
-					//$term_id = $this->add_auto_tax_term($post_id, $bool_field, $term_id_field);
+						//$this->_log('ids to add terms to:');
+						//$this->_log($query->posts);
+						//$this->_log($this->options['at_cpts_creators']);
+						foreach ($query->posts as $post_id){
+							// keeping variable name contextual, because the CPT slug is being used as the tax term
+							$tax = $cpt;
+							//$this->_log('looping '.$tax);
+							//$this->_log('update meta for post: ' . $post_id);
+							$success = update_field($this->acf_bool_field_id, 1, $post_id);
+							$this->add_auto_tax_term($post_id, 1, '', $tax);
+							//$this->_log($success);
+
+						}
+					}
+
 				}
 			}
 		}

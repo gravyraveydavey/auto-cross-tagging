@@ -33,15 +33,15 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 								<td><label for="auto_taxonomies_options_at_cpts_creators">Allow the following post types to <strong>create</strong> auto tags</label></td>
 								<td>
 									<?php
+									$this->_log($this->options);
 										$default_cpts = get_post_types( array( 'public' => true, '_builtin' => false ), 'objects' );
 										$custom_cpts = get_post_types( array( 'public' => true, '_builtin' => true ), 'objects' );
 										$cpts = array_merge($default_cpts, $custom_cpts);
-										$creators = (array) (array_key_exists('at_cpts_creators', $this->options)) ? $this->options['at_cpts_creators'] : array();
 
 										if (!empty($cpts)){
 											$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_creators][]" id="auto_taxonomies_options_at_cpts_creators" class="regular-text all-options">';
-											foreach( $cpts as $id => $cpt ) {
-												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, in_array( $id, $creators ) ? 'selected' : '', $cpt->labels->singular_name );
+											foreach( $cpts as $cpt ) {
+												$html .= sprintf( '<option value="%s" %s>%s</option>', $cpt->name, in_array( $cpt->name, $this->creators ) ? 'selected="selected"' : '', $cpt->labels->singular_name );
 											}
 											$html .= '</select>';
 										} else {
@@ -52,25 +52,40 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 										?>
 								</td>
 							</tr>
-							<tr>
-								<td><label for="auto_taxonomies_options_at_cpts_users">Allow the following post types to <strong>use</strong> auto tags</label></td>
-								<td>
-									<?php
-										$users = (array) (array_key_exists('at_cpts_users', $this->options)) ? $this->options['at_cpts_users'] : array();
-										if (!empty($cpts)){
-											$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_users][]" id="auto_taxonomies_options_at_cpts_users" class="regular-text all-options">';
-											foreach( $cpts as $id => $cpt ) {
-												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, in_array( $id, $users ) ? 'selected' : '', $cpt->labels->singular_name );
+							<?php
+
+							if (array_key_exists('at_cpts_creators', $this->options)){
+								foreach($this->options['at_cpts_creators'] as $creators_cpt){
+									?>
+									<tr>
+										<td><label for="auto_taxonomies_options_at_cpts_users_<?php echo $creators_cpt; ?>">Allow the following post types to <strong>use</strong> the <strong><?php echo $creators_cpt; ?></strong> auto tax</label></td>
+										<td>
+											<?php
+											$cpt_users = array();
+											if(array_key_exists($creators_cpt, $this->users)){
+												$cpt_users = (array) $this->users[$creators_cpt];
 											}
-											$html .= '</select>';
-										} else {
-											$html = '<p class="description">No custom post types found</p>';
-											$html .= '<input type="hidden" name="auto_taxonomies_options[at_cpts_users][]" id="auto_taxonomies_options_at_cpts_users" />';
-										}
-										echo $html;
-										?>
-								</td>
-							</tr>
+											//$this->_log($cpts);
+												if (!empty($cpts)){
+													$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_users]['.$creators_cpt.'][]" id="auto_taxonomies_options_at_cpts_users_'.$creators_cpt.'" class="regular-text all-options">';
+													foreach( $cpts as $cpt ) {
+														if ($creators_cpt !== $cpt->name){
+															$html .= sprintf( '<option value="%s" %s>%s</option>', $cpt->name, in_array( $cpt->name, $cpt_users ) ? 'selected' : '', $cpt->labels->singular_name );
+														}
+													}
+													$html .= '</select>';
+												} else {
+													$html = '<p class="description">No custom post types found</p>';
+													$html .= '<input type="hidden" name="auto_taxonomies_options[at_cpts_users][]" id="auto_taxonomies_options_at_cpts_users_'.$cpt.'" />';
+												}
+												echo $html;
+												?>
+										</td>
+									</tr>
+									<?php
+								}
+							}
+							?>
 						</tbody>
 						<tfoot>
 							<tr>
@@ -90,22 +105,28 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 							</tr>
 						</thead>
 						<tbody>
+							<?php
+							if (empty($this->creators)){
+								?>
+								<tr>
+									<td>Please choose an auto tax creator above in order to batch assign</td>
+								</tr>
+								<?php
+							} else {
+
+							}
+							?>
 							<tr>
 								<td><label for="auto_taxonomies_options_at_cpts_batch_assign">Batch update a post type to add all it's content as new tax terms</label></td>
 								<td>
 									<?php
-										$creators = (array) (array_key_exists('at_cpts_batch_assign', $this->options)) ? $this->options['at_cpts_creators'] : array();
-
-										if (!empty($cpts)){
-											$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_batch_assign][]" id="auto_taxonomies_options_at_cpts_batch_assign" class="regular-text all-options">';
-											foreach( $cpts as $id => $cpt ) {
-												$html .= sprintf( '<option value="%s" %s>%s</option>', $id, '', $cpt->labels->singular_name );
+										$html = '<select multiple size="5" name="auto_taxonomies_options[at_cpts_batch_assign][]" id="auto_taxonomies_options_at_cpts_batch_assign" class="regular-text all-options">';
+										foreach( $cpts as $cpt ) {
+											if(in_array($cpt->name, $this->creators)){
+												$html .= sprintf( '<option value="%s" %s>%s</option>', $cpt->name, '', $cpt->labels->singular_name );
 											}
-											$html .= '</select>';
-										} else {
-											$html = '<p class="description">No custom post types found</p>';
-											$html .= '<input type="hidden" name="auto_taxonomies_options[at_cpts_batch_assign][]" id="auto_taxonomies_options_at_cpts_batch_assign" />';
 										}
+										$html .= '</select>';
 										echo $html;
 										?>
 								</td>
