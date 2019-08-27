@@ -54,8 +54,8 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 							</tr>
 							<?php
 
-							if (array_key_exists('at_cpts_creators', $this->options)){
-								foreach($this->options['at_cpts_creators'] as $creators_cpt){
+							if ($this->creators){
+								foreach($this->creators as $creators_cpt){
 									?>
 									<tr>
 										<td><label for="auto_taxonomies_options_at_cpts_users_<?php echo $creators_cpt; ?>">Allow the following post types to <strong>use</strong> the <strong><?php echo $creators_cpt; ?></strong> auto tax</label></td>
@@ -97,7 +97,53 @@ if (isset($_POST['auto_taxonomies_options']) && check_admin_referer('auto_taxono
 					</table>
 					<br />
 
-
+					<?php
+					if ($this->creators){
+					?>
+					<table class="widefat">
+						<thead>
+							<tr>
+								<th colspan="2"><strong>Enable default term creation</strong></td>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><label for="auto_taxonomies_options_at_cpts_enabled_by_default">Enable default term creation the following post types (to make post type work like CPTonomies):</label></td>
+								<td>
+									<?php
+									$enabled_by_default = array();
+									if (array_key_exists('enabled_by_default', $this->options)){
+										$enabled_by_default = $this->options['enabled_by_default'];
+									}
+									if (!empty($cpts)){
+										$html = '<select multiple size="5" name="auto_taxonomies_options[enabled_by_default][]" id="auto_taxonomies_options_at_cpts_enabled_by_default" class="regular-text all-options">';
+										foreach( $cpts as $cpt ) {
+											if (in_array( $cpt->name, $this->creators )){
+												$html .= sprintf( '<option value="%s" %s>%s</option>', $cpt->name, in_array( $cpt->name, $enabled_by_default ) ? 'selected' : '', $cpt->labels->singular_name );
+											}
+										}
+										$html .= '</select>';
+									} else {
+										$html = '<p class="description">No custom post types found</p>';
+										$html .= '<input type="hidden" name="auto_taxonomies_options[enabled_by_default][]" id="auto_taxonomies_options_at_cpts_enabled_by_default" />';
+									}
+									echo $html;
+									?>
+								</td>
+							</tr>
+						</tbody>
+						<tfoot>
+							<tr>
+								<td colspan="2" align="right">
+									<button class="button-primary" type="submit" name="submit"><?php esc_attr_e( 'Save changes' ); ?></button>
+								</td>
+							</tr>
+						</tfoot>
+					</table>
+					<br />
+					<?php
+					}
+					?>
 					<table class="widefat">
 						<thead>
 							<tr>

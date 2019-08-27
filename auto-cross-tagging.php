@@ -67,6 +67,7 @@ class auto_cross_tagging_plugin {
 
 		// run before ACF saves the $_POST['fields'] data (so we can add in the returned term ID)
 		add_action('acf/save_post', array($this,'save_hook'), 5);
+		add_action('acf/prepare_field/key='.$this->acf_bool_field_id, array($this,'prepare_acf_field') );
 
 		add_action('pre_delete_term', array($this,'delete_auto_term_hook'), 10, 2);
 
@@ -86,6 +87,7 @@ class auto_cross_tagging_plugin {
 
 	public function populate_options(){
 		if (!isset($this->options)) $this->options = get_option('auto_taxonomies_options', array());
+
 		$this->users = array();
 		if ( array_key_exists('at_cpts_users', $this->options)) {
 			$this->users = (array) $this->options['at_cpts_users'];
@@ -107,38 +109,10 @@ class auto_cross_tagging_plugin {
 		add_action('admin_head', array($this, 'add_tax_page_css'));
 	}
 
-	public function add_tax_page_css(){
-
-		$creators = (array) $this->options['at_cpts_creators'];
-
-		if (!empty($creators)){
-			?>
-			<style>
-				<?php
-				foreach($creators as $tax){
-					?>
-					.taxonomy-<?php echo $tax; ?> #col-left{
-						display: none;
-					}
-					.taxonomy-<?php echo $tax; ?> #col-right{
-						float: none;
-						width: auto;
-					}
-					.taxonomy-<?php echo $tax; ?> .row-actions .edit,
-					.taxonomy-<?php echo $tax; ?> .row-actions .inline{
-						display: none;
-					}
-					<?php
-				}
-				?>
-			</style>
-			<?php
-		}
-	}
 
 	public function delete_auto_term_hook($term_id, $taxonomy){
 		// bail early if not an auto_tax term
-		if( $taxonomy !== 'auto_taxonomies') {
+		if( !in_array($taxonomy, $this->creators)) {
 				return;
 		}
 		$term = get_term($term_id);
@@ -180,18 +154,18 @@ class auto_cross_tagging_plugin {
 
 	public function save_hook( $post_id ){
 
-		$this->_log('save post hook');
+		//$this->_log('save post hook');
 		// bail early if no ACF data
 		if( empty($_POST['acf']) ) {
 				return;
 		}
 
-		if (array_key_exists($cpt, $this->options['at_cpts_users'])){
-			foreach ($this->options['at_cpts_users'][$cpt] as $tax){
+		if (array_key_exists($cpt, $this->users)){
+			foreach ($this->users[$cpt] as $tax){
 				$term_id = $this->add_auto_tax_term( $post_id, $_POST['acf'][$this->acf_bool_field_id], $_POST['acf'][$this->acf_tax_id_field_id], $tax );
 
 				if ($term_id) $_POST['acf'][$this->acf_tax_id_field_id] = $term_id;
-				$this->_log('new term created! term id: ' . $term_id);
+				//$this->_log('new term created! term id: ' . $term_id);
 			}
 		}
 
@@ -247,19 +221,17 @@ class auto_cross_tagging_plugin {
 	public function registration(){
 
 		// open a filter for customizing the CPTs
-		$creators = (array) $this->options['at_cpts_creators'];
-		$users = (array) $this->options['at_cpts_users'];
 
 		$default_cpts = get_post_types( array( 'public' => true, '_builtin' => false ), 'objects' );
 		$custom_cpts = get_post_types( array( 'public' => true, '_builtin' => true ), 'objects' );
 		$cpts = array_merge($default_cpts, $custom_cpts);
 
-		foreach($creators as $creator){
-			if(array_key_exists($creator, $users)){
+		foreach($this->creators as $creator){
+			if(array_key_exists($creator, $this->users)){
 
 				//$this->_log('registering auto tax, assigning to following cpts');
 				//$this->_log($attachable_post_types);
-				$this->_log( 'registering tax: ' . $cpts[ $creator ]->name );
+				//$this->_log( 'registering tax: ' . $cpts[ $creator ]->name );
 
 				$labels = array(
 					'name'                       => _x( $cpts[ $creator ]->labels->name.' (Auto Tax)', 'Taxonomy General Name', 'text_domain' ),
@@ -293,8 +265,8 @@ class auto_cross_tagging_plugin {
 					'show_in_nav_menus'          => true,
 					'show_tagcloud'              => false,
 				);
-				$this->_log($users[$creator]);
-				register_taxonomy( $cpts[ $creator ]->name, $users[$creator], $args );
+				//$this->_log($this->users[$creator]);
+				register_taxonomy( $cpts[ $creator ]->name, $this->users[$creator], $args );
 			}
 		}
 
@@ -305,8 +277,7 @@ class auto_cross_tagging_plugin {
 		if( function_exists('acf_add_local_field_group') ){
 
 			$location_array = array();
-			$creators = (array) (array_key_exists('at_cpts_creators', $this->options)) ? $this->options['at_cpts_creators'] : array();
-			$cpts_option = apply_filters( 'auto_taxonomies_attach_to_types', $creators );
+			$cpts_option = apply_filters( 'auto_taxonomies_attach_to_types', $this->creators );
 
 			if ($cpts_option){
 				foreach( $cpts_option as $custom_post_type ) {
@@ -405,7 +376,7 @@ class auto_cross_tagging_plugin {
 	}
 
 	public function batch_assign_terms($cpts){
-		$this->_log('FOUND BATCH ASSIGNMENT REQUEST, DO STUFF');
+		//$this->_log('FOUND BATCH ASSIGNMENT REQUEST, DO STUFF');
 		//$this->_log($cpts);
 		if ($cpts){
 			foreach($cpts as $cpt){
@@ -419,7 +390,7 @@ class auto_cross_tagging_plugin {
 				);
 				$query = new WP_Query( $args );
 
-				if (array_key_exists($cpt, $this->options['at_cpts_users'])){
+				if (array_key_exists($cpt, $this->users)){
 
 					if($query->post_count){
 						//$solution->term_id
@@ -427,7 +398,7 @@ class auto_cross_tagging_plugin {
 
 						//$this->_log('ids to add terms to:');
 						//$this->_log($query->posts);
-						//$this->_log($this->options['at_cpts_creators']);
+						//$this->_log($this->creators);
 						foreach ($query->posts as $post_id){
 							// keeping variable name contextual, because the CPT slug is being used as the tax term
 							$tax = $cpt;
@@ -445,4 +416,45 @@ class auto_cross_tagging_plugin {
 		}
 	}
 
+	public function prepare_acf_field( $field ){
+		//$this->_log($field);
+
+		$enabled_by_default = array();
+		if (array_key_exists('enabled_by_default', $this->options)){
+			$enabled_by_default = $this->options['enabled_by_default'];
+		}
+		// change default
+		if ( in_array( get_post_type(), $enabled_by_default )){
+			$field['value'] = 1;
+		}
+
+		return $field;
+	}
+
+	public function add_tax_page_css(){
+
+		if (!empty($this->creators)){
+			?>
+			<style>
+				<?php
+				foreach($this->creators as $tax){
+					?>
+					.taxonomy-<?php echo $tax; ?> #col-left{
+						display: none;
+					}
+					.taxonomy-<?php echo $tax; ?> #col-right{
+						float: none;
+						width: auto;
+					}
+					.taxonomy-<?php echo $tax; ?> .row-actions .edit,
+					.taxonomy-<?php echo $tax; ?> .row-actions .inline{
+						display: none;
+					}
+					<?php
+				}
+				?>
+			</style>
+			<?php
+		}
+	}
 }
