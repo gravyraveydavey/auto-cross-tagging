@@ -224,31 +224,44 @@ class auto_cross_tagging_plugin {
 		// removes the description column
 		//$this->_log('running custom admin column filter');
 		//$this->_log($columns);
-		$new_columns = array(
-			'cb' => '<input type="checkbox" />',
-			'name' => __('Name'),
-			'origin_header' => __('Origin ID'),
-			'slug' => __('Slug'),
-			'posts' => __('Posts')
-		);
-		return $new_columns;
+		$type = 'post';
+		if (isset($_GET['post_type'])) {
+				$type = $_GET['post_type'];
+		}
+
+		if ( !in_array($type, $this->creators) ){
+			$columns = array(
+				'cb' => '<input type="checkbox" />',
+				'name' => __('Name'),
+				'origin_header' => __('Origin ID'),
+				'slug' => __('Slug'),
+				'posts' => __('Posts')
+			);
+		}
+		return $columns;
 	}
 
 
 	public function custom_column($string, $column_name, $term_id) {
 		// turns description colummn into a link to original source of term
+		$type = 'post';
+		if (isset($_GET['post_type'])) {
+				$type = $_GET['post_type'];
+		}
 
-		global $taxonomy;
+		if ( !in_array($type, $this->creators) ){
+			global $taxonomy;
 
-		$term = get_term($term_id, $taxonomy);
-		if (!is_wp_error($term)){
-			switch ($column_name) {
-					case 'origin_header':
-							// get header image url
-							$string .= "<a href=".get_edit_post_link($term->description).">".$term->description."</a>";
-							break;
-					default:
-							break;
+			$term = get_term($term_id, $taxonomy);
+			if (!is_wp_error($term)){
+				switch ($column_name) {
+						case 'origin_header':
+								// get header image url
+								$string .= "<a href=".get_edit_post_link($term->description).">".$term->description."</a>";
+								break;
+						default:
+								break;
+				}
 			}
 		}
 		return $string;
