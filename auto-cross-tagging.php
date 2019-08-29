@@ -17,6 +17,7 @@ class auto_cross_tagging_plugin {
 		$options,
 		$users,
 		$creators,
+		$tax_prefix,
 		$acf_bool_field_id,
 		$acf_tax_id_field_id,
 		$debug;
@@ -49,7 +50,8 @@ class auto_cross_tagging_plugin {
 		$this->plugin_base = plugin_dir_url(__FILE__);
 		$this->plugin_base_path = plugin_dir_path(__FILE__);
 		$this->debug = false;
-
+		//$this->tax_prefix = 'auto_tax_';
+		$this->tax_prefix = '';
 		$this->acf_bool_field_id = 'field_591c213c8a3ac';
 		$this->acf_tax_id_field_id = 'field_591c6d710a65b';
 
@@ -60,7 +62,7 @@ class auto_cross_tagging_plugin {
 		// admin stuff
 		add_action('admin_menu', array($this,'menu_page'), 10);
 
-		add_action( 'wp_loaded', array($this,'registration' ));
+		add_action( 'registered_post_type', array($this,'registration' ));
 		add_action( 'admin_init', array($this,'register_fields' ));
 
 		add_action( 'admin_enqueue_scripts', array($this,'auto_tax_admin_css'), 11 );
@@ -70,13 +72,88 @@ class auto_cross_tagging_plugin {
 		add_action('acf/prepare_field/key='.$this->acf_bool_field_id, array($this,'prepare_acf_field') );
 
 		add_action('pre_delete_term', array($this,'delete_auto_term_hook'), 10, 2);
+		add_action( 'before_delete_post', array($this,'delete_post_hook'), 10, 2);
 
-		add_filter("manage_edit-columns", array($this,'admin_columns'));
+		foreach($this->creators as $tax){
+			$tax = $this->tax_prefix.$tax;
+			//$this->_log('running filter on '.$tax);
+			add_filter("manage_edit-".$tax."_columns", array($this,'admin_columns'));
+			add_filter("manage_".$tax."_custom_column", array($this,'custom_column'), 10, 3);
+		}
 
-		add_filter("manage_custom_column", array($this,'custom_column'), 10, 3);
-
-
+		if ($this->tax_prefix !== ''){
+			add_action('pre_get_posts', array($this, 'auto_prefix_tax_queries'), 999);
+		} else {
+			add_action('pre_get_posts', array($this, 'auto_prefix_tax_queries_admin_only'), 10);
+		}
+		add_filter( 'query_vars', array($this, 'add_admin_query_vars') );
 		//$this->autosave_override();		// this needs rethinking - have to write to config file
+
+		add_filter( 'parse_query', array($this, 'handle_auto_tax_admin_queries'), 0 );
+		add_action( 'restrict_manage_posts', array($this, 'add_filter_to_admin_listing') );
+	}
+
+	public function handle_auto_tax_admin_queries( $query ){
+			global $pagenow;
+			$type = 'post';
+			if (isset($_GET['post_type'])) {
+					$type = $_GET['post_type'];
+			}
+			//$this->_log('parse admin query');
+			foreach($this->users as $auto_tax => $assignments){
+				//$this->_log('looping ' . $auto_tax .' assignments: ');
+				foreach($assignments as $post_type){
+					//$this->_log('checking cpt: '. $post_type);
+					if ( $post_type == $type && is_admin() && $pagenow == 'edit.php') {
+							//$this->_log('looking for auto_tax_'.$auto_tax . ' in get');
+							if (isset($_GET['auto_tax_'.$auto_tax])){
+								//$this->_log('match - add query var from get, val: ' . $_GET['auto_tax_'.$auto_tax]);
+								$query->query_vars['auto_tax_'.$auto_tax] = $_GET['auto_tax_'.$auto_tax];
+								//$this->_log($query);
+								//add_admin_query_vars('auto_tax_solution', $_GET['solution']);
+							}
+					}
+				}
+			}
+	}
+
+	public function add_filter_to_admin_listing(){
+		global $pagenow;
+		$type = 'post';
+		if (isset($_GET['post_type'])) {
+				$type = $_GET['post_type'];
+		}
+		//$this->_log('add filter dropdown to admin listing page');
+		foreach($this->users as $auto_tax => $assignments){
+			//$this->_log('looping ' . $auto_tax .' assignments: ');
+			foreach($assignments as $post_type){
+				//$this->_log('checking cpt: '. $post_type);
+				if ( $post_type == $type && is_admin() && $pagenow == 'edit.php') {
+					?>
+					<select name="auto_tax_<?php echo $auto_tax;?>">
+						<option value="">All <?php echo $auto_tax;?>s</option>
+						<?php
+							$auto_tax_terms = get_terms( array(
+								'taxonomy' => $auto_tax,
+								'hide_empty' => true,
+							));
+							$current = get_query_var('auto_tax_'.$auto_tax, '');
+							//$this->_log('checking query vars for auto_tax_'.$auto_tax.' : '.$current);
+							foreach ($auto_tax_terms as $term) {
+								$selected = ($term->slug == $current) ? ' selected="selected"':'';
+								printf(
+									'<option value="%s"%s>%s</option>',
+									$term->slug,
+									$selected,
+									$term->name
+								);
+							}
+						?>
+					</select>
+					<?php
+				}
+			}
+		}
 	}
 
 	public function activation() {
@@ -112,7 +189,8 @@ class auto_cross_tagging_plugin {
 
 	public function delete_auto_term_hook($term_id, $taxonomy){
 		// bail early if not an auto_tax term
-		if( !in_array($taxonomy, $this->creators)) {
+		$check_tax = str_replace($this->tax_prefix, '', $taxonomy);
+		if( !in_array($check_tax, $this->creators)) {
 				return;
 		}
 		$term = get_term($term_id);
@@ -123,9 +201,29 @@ class auto_cross_tagging_plugin {
 		}
 	}
 
+	public function delete_post_hook( $postid ){
+
+		global $post_type;
+		// bail on action if not an auto tax creator
+		if ( !in_array($post_type, $this->creators ))  return;
+
+		//$this->_log('post id: '.$postid);
+		$term_id = get_field($this->acf_tax_id_field_id, $postid);
+		//$this->_log('deleting post from an auto tax creator - delete term also');
+		//$this->_log('term: '.$term_id);
+		if ($term_id){
+			//$this->_log('attempting to delete term');
+			$taxonomy = $this->tax_prefix.$post_type;
+			$result = wp_delete_term( $term_id, $taxonomy );
+			//$this->_log($result);
+		}
+
+	}
 
 	public function admin_columns($columns) {
 		// removes the description column
+		//$this->_log('running custom admin column filter');
+		//$this->_log($columns);
 		$new_columns = array(
 			'cb' => '<input type="checkbox" />',
 			'name' => __('Name'),
@@ -139,14 +237,19 @@ class auto_cross_tagging_plugin {
 
 	public function custom_column($string, $column_name, $term_id) {
 		// turns description colummn into a link to original source of term
-		$term = get_term($term_id, 'auto_taxonomies');
-		switch ($column_name) {
-				case 'origin_header':
-						// get header image url
-						$string .= "<a href=".get_edit_post_link($term->description).">".$term->description."</a>";
-						break;
-				default:
-						break;
+
+		global $taxonomy;
+
+		$term = get_term($term_id, $taxonomy);
+		if (!is_wp_error($term)){
+			switch ($column_name) {
+					case 'origin_header':
+							// get header image url
+							$string .= "<a href=".get_edit_post_link($term->description).">".$term->description."</a>";
+							break;
+					default:
+							break;
+			}
 		}
 		return $string;
 	}
@@ -155,18 +258,17 @@ class auto_cross_tagging_plugin {
 	public function save_hook( $post_id ){
 
 		//$this->_log('save post hook');
+		//$this->_log($_POST);
 		// bail early if no ACF data
 		if( empty($_POST['acf']) ) {
 				return;
 		}
 
-		if (array_key_exists($cpt, $this->users)){
-			foreach ($this->users[$cpt] as $tax){
-				$term_id = $this->add_auto_tax_term( $post_id, $_POST['acf'][$this->acf_bool_field_id], $_POST['acf'][$this->acf_tax_id_field_id], $tax );
-
-				if ($term_id) $_POST['acf'][$this->acf_tax_id_field_id] = $term_id;
-				//$this->_log('new term created! term id: ' . $term_id);
-			}
+		if (in_array($_POST['post_type'], $this->creators) && $_POST['acf'][$this->acf_bool_field_id]){
+			$taxonomy = $this->tax_prefix.$_POST['post_type'];
+			$term_id = $this->add_auto_tax_term( $post_id, $_POST['acf'][$this->acf_bool_field_id], $_POST['acf'][$this->acf_tax_id_field_id], $taxonomy );
+			//$this->_log('created term - id: '.$term_id);
+			if ($term_id) $_POST['acf'][$this->acf_tax_id_field_id] = $term_id;
 		}
 
 	}
@@ -266,7 +368,7 @@ class auto_cross_tagging_plugin {
 					'show_tagcloud'              => false,
 				);
 				//$this->_log($this->users[$creator]);
-				register_taxonomy( $cpts[ $creator ]->name, $this->users[$creator], $args );
+				register_taxonomy( $this->tax_prefix.$cpts[ $creator ]->name, $this->users[$creator], $args );
 			}
 		}
 
@@ -365,6 +467,90 @@ class auto_cross_tagging_plugin {
 
 	}
 
+
+	public function auto_prefix_tax_queries( $query ){
+		//$this->_log('PLUGIN pre get posts');
+
+		//$this->_log('running pre get posts');
+		$query->tax_query = $query->tax_query;
+		if ($query->tax_query){
+
+			//$this->_log('tax query was present!');
+			//$this->_log($query);
+			$rebuild = array();
+			$modify = false;
+			$tax_query_var = get_query_var( 'tax_query', false );
+			if ($tax_query_var){
+				//$this->_log('found tax in query var, manually adding to queries object');
+				//$this->_log($tax_query_var);
+				$query->tax_query->queries = array_merge($query->tax_query->queries, $tax_query_var);
+			}
+			//$this->_log($query->tax_query->queries);
+			foreach($query->tax_query->queries as $i => $tax_query){
+				if (is_array($tax_query)){
+					//$this->_log($tax_query);
+					if (array_key_exists('taxonomy', $tax_query)){
+						//$this->_log('checking: '.$tax_query['taxonomy']);
+						if ( in_array($tax_query['taxonomy'], $this->creators) ){
+							//found a query that matches the post type of one of our auto tax CPTs DIRECTLY (it's not yet been prefixed). So prefix it!
+							//$this->_log('adding prefix to '.$tax_query['taxonomy']);
+							$query->tax_query->queries[$i]['taxonomy'] = $this->tax_prefix.$tax_query['taxonomy'];
+						}
+					}
+				}
+			}
+			$query->set('tax_query', $query->tax_query->queries);
+			//$this->_log('final modified query:');
+			//$this->_log($query);
+		}
+
+	}
+
+	function add_admin_query_vars( $vars ){
+		foreach($this->creators as $cpt){
+			$vars[] = 'auto_tax_'.$cpt;
+		}
+		//$this->_log($vars);
+		flush_rewrite_rules(true);
+		return $vars;
+	}
+
+	public function auto_prefix_tax_queries_admin_only( $query ){
+		// @todo - this is adding everything as it should be to handle AUTO prefixing, but not actually impacting query - debug
+		// funciton still needed to assign the prefixed version to the corresponding args
+		if (is_admin()){
+			//$this->_log('PLUGIN ADMIN pre get posts');
+			//$this->_log($query);
+			$tax_queries = array();
+			foreach($this->creators as $cpt){
+				$tax_query_var = 'auto_tax_'.$cpt;
+				$auto_tax = get_query_var($tax_query_var);
+				//$this->_log('found auto tax query var: ' . $cpt.' term: '. $auto_tax);
+
+				if ($auto_tax){
+					$tax_queries[] = array(
+						'taxonomy' => $cpt,
+						'field' => 'slug',
+						'terms' => $auto_tax
+					);
+				}
+			}
+			if (!empty($tax_queries)){
+				//$this->_log('setting tax queries');
+				$query->set( 'tax_query', $tax_queries);
+				//$query->query[$tax_query_var] = $auto_tax;
+			}
+			//$this->_log('updated query');
+			//$this->_log($query);
+		}
+
+	}
+
+	public function auto_prefix_term_queries($query){
+		//$this->_log('running pre get terms query');
+		//$this->_log($query);
+	}
+
 	public function admin_page() {
 
 		// General check for user permissions.
@@ -385,7 +571,7 @@ class auto_cross_tagging_plugin {
 				$args = array(
 					'post_type' => $cpt,
 					'fields' => 'ids',
-					'post_status' => array('publish', 'private'),
+					'post_status' => array('private', 'publish', 'draft', 'pending', 'future'),
 					'posts_per_page' => -1,
 				);
 				$query = new WP_Query( $args );
@@ -394,14 +580,14 @@ class auto_cross_tagging_plugin {
 
 					if($query->post_count){
 						//$solution->term_id
-						//update_post_meta( $solution->term_id, '', 1, $prev_value )
+						//update_post_meta( $solution->term_id, '', 1 );
 
 						//$this->_log('ids to add terms to:');
 						//$this->_log($query->posts);
 						//$this->_log($this->creators);
 						foreach ($query->posts as $post_id){
 							// keeping variable name contextual, because the CPT slug is being used as the tax term
-							$tax = $cpt;
+							$tax = $this->tax_prefix.$cpt;
 							//$this->_log('looping '.$tax);
 							//$this->_log('update meta for post: ' . $post_id);
 							$success = update_field($this->acf_bool_field_id, 1, $post_id);
@@ -438,6 +624,7 @@ class auto_cross_tagging_plugin {
 			<style>
 				<?php
 				foreach($this->creators as $tax){
+					$tax = $this->tax_prefix.$tax;
 					?>
 					.taxonomy-<?php echo $tax; ?> #col-left{
 						display: none;
