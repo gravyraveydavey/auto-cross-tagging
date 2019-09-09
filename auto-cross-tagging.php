@@ -374,11 +374,13 @@ class auto_cross_tagging_plugin {
 				$args = array(
 					'labels'                     => $labels,
 					'hierarchical'               => true,
-					'public'                     => true,
+					'public'                     => false,
 					'show_ui'                    => true,
 					'show_admin_column'          => true,
+					'query_var'                  => 'auto_tax_'.$cpts[ $creator ]->name,
 					'show_in_nav_menus'          => true,
 					'show_tagcloud'              => false,
+					'rewrite'                    => false,
 				);
 				//$this->_log($this->users[$creator]);
 				register_taxonomy( $this->tax_prefix.$cpts[ $creator ]->name, $this->users[$creator], $args );
